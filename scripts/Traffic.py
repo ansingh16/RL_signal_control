@@ -1,21 +1,16 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score, confusion_matrix
 import pandas as pd 
-
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 class TrafficDataset(Dataset):
-    def __init__(self, filepath,df, feature_cols, target_col, seq_len=16):
-        self.filepath = filepath
-
-        # call prepare_site_data()
-        self.prepare_site_data()
-
+    def __init__(self, df, feature_cols, target_col, seq_len=16):
         self.seq_len = seq_len
-        self.features = self.df[feature_cols].values
-        self.targets = self.df[target_col].values.astype(int)  # ensure int for classification
+        self.features = df[feature_cols].values
+        self.targets = df[target_col].values.astype(int)
 
     def __len__(self):
         return len(self.features) - self.seq_len
@@ -28,33 +23,28 @@ class TrafficDataset(Dataset):
 
         # Convert to tensors
         X = torch.tensor(X, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.long)  # (scalar, not vector)
+        y = torch.tensor(y, dtype=torch.long)
 
         return X, y
+
+class TrafficDataProcessor:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.df = None
         
-    def _replace_empty(self,x):
+    def _replace_empty(self, x):
         x = x.replace('', 0).astype(float)
         x = x.infer_objects(copy=False)
         return x
 
-    
     def prepare_site_data(self, speed_threshold=30):
         """
         Prepares traffic dataset for LSTM training for one site.
-        
-        Args:
-            file_path (str): Path to parquet file containing site data.
-            speed_threshold (int): Avg speed threshold (mph) below which we call congestion=1.
-        
-        Returns:
-            pd.DataFrame: Processed dataframe with features + congestion label.
         """
-
         print(f"Preprocessing data for site {self.filepath}")
 
         # Load data
         df = pd.read_parquet(self.filepath)
-            
             
         # add time
         df['time'] = pd.to_datetime(df['Report Date'].str.split('T').str[0] + df['Time Period Ending'], format='%Y-%m-%d%H:%M:%S')
@@ -109,23 +99,19 @@ class TrafficDataset(Dataset):
         df = df.dropna()
         
         self.df = df
-            
+        print(f"Data processed. Shape: {df.shape}")
+        print(f"Congestion distribution: {Counter(df['congestion'])}")
         
-    def create_loaders_from_df(self, target_col="congestion",
-                            seq_len=48, splits=(0.7, 0.15, 0.15),
-                            batch_size=64, shuffle_train=True, num_workers=0):
+    def create_loaders_from_df(self, target_col="congestion", seq_len=48, 
+                              splits=(0.7, 0.15, 0.15), batch_size=64, 
+                              shuffle_train=True, num_workers=0, handle_imbalance=True):
         """
-        Chronologically split df into train/val/test *by sequence samples* and return DataLoaders
-        - df must be sorted by datetime index ascending
-        - splits are fractions summing roughly to 1.0 (train, val, test)
+        Chronologically split df into train/val/test and return DataLoaders with imbalance handling
         """
-
         # Features and target
-        target_col = "congestion"
         feature_cols = [c for c in self.df.columns if c != target_col]
 
-
-        # sanity
+        # sanity check
         assert abs(sum(splits) - 1.0) < 1e-6, "splits must sum to 1.0"
         n_rows = len(self.df)
         if n_rows <= seq_len:
@@ -142,24 +128,53 @@ class TrafficDataset(Dataset):
         if n_train <= 0 or n_val < 0 or n_test < 0:
             raise ValueError("Split sizes too small; adjust seq_len or splits")
 
-    
         train_end_row = n_train + seq_len
         val_start_row = n_train
         val_end_row = n_train + n_val + seq_len
         test_start_row = n_train + n_val
-        test_end_row = n_rows  # include to the end
+        test_end_row = n_rows
 
         df_train = self.df.iloc[0:train_end_row].copy()
         df_val = self.df.iloc[val_start_row:val_end_row].copy()
         df_test = self.df.iloc[test_start_row:test_end_row].copy()
 
-        # Build Datasets using the class
+        # Build Datasets
         train_ds = TrafficDataset(df_train, feature_cols, target_col=target_col, seq_len=seq_len)
         val_ds = TrafficDataset(df_val, feature_cols, target_col=target_col, seq_len=seq_len)
         test_ds = TrafficDataset(df_test, feature_cols, target_col=target_col, seq_len=seq_len)
 
-        # Dataloaders
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=shuffle_train, num_workers=num_workers)
+        # Handle class imbalance for training data
+        train_loader = None
+        if handle_imbalance:
+            # Get labels for training samples
+            train_labels = []
+            for i in range(len(train_ds)):
+                _, label = train_ds[i]
+                train_labels.append(label.item())
+            
+            # Calculate class weights
+            class_counts = Counter(train_labels)
+            total_samples = sum(class_counts.values())
+            class_weights = {cls: total_samples / count for cls, count in class_counts.items()}
+            
+            print(f"Class distribution in training: {class_counts}")
+            print(f"Class weights: {class_weights}")
+            
+            # Create sample weights
+            sample_weights = [class_weights[label] for label in train_labels]
+            sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(sample_weights),
+                replacement=True
+            )
+            
+            train_loader = DataLoader(train_ds, batch_size=batch_size, 
+                                    sampler=sampler, num_workers=num_workers)
+        else:
+            train_loader = DataLoader(train_ds, batch_size=batch_size, 
+                                    shuffle=shuffle_train, num_workers=num_workers)
+
+        # Validation and test loaders (no sampling needed)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
@@ -171,15 +186,16 @@ class TrafficDataset(Dataset):
             "n_test_samples": len(test_ds),
             "train_rows_range": (0, train_end_row-1),
             "val_rows_range": (val_start_row, val_end_row-1),
-            "test_rows_range": (test_start_row, test_end_row-1)
+            "test_rows_range": (test_start_row, test_end_row-1),
+            "feature_cols": feature_cols
         }
 
-        self.train_loader=train_loader
-        self.val_loader=val_loader
-        self.test_loader=test_loader
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.test_loader = test_loader
         self.info = info
-
-
+        
+        return train_loader, val_loader, test_loader, info
 
 
 class TrafficNet(nn.Module):
@@ -194,58 +210,132 @@ class TrafficNet(nn.Module):
             hidden_size=hidden_size, 
             num_layers=num_layers, 
             batch_first=True, 
-            dropout=dropout
+            dropout=dropout if num_layers > 1 else 0
         )
 
-        # Fully connected output layer
-        self.fc = nn.Linear(hidden_size, num_classes)
+        # Fully connected layers
+        self.fc1 = nn.Linear(hidden_size, hidden_size // 2)
+        self.fc2 = nn.Linear(hidden_size // 2, num_classes)
+        self.dropout = nn.Dropout(dropout)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         # x: [batch, seq_len, input_size]
         out, _ = self.lstm(x)               # [batch, seq_len, hidden_size]
         out = out[:, -1, :]                 # last timestep → [batch, hidden_size]
-        out = self.fc(out)                  # → [batch, num_classes]
+        out = self.relu(self.fc1(out))      # → [batch, hidden_size//2]
+        out = self.dropout(out)
+        out = self.fc2(out)                 # → [batch, num_classes]
         return out
 
 
 
-def train_model(model, train_loader, val_loader, epochs=20):
+class ModelTrainer:
+    def __init__(self, model, class_weights=None):
+        self.model = model
+        self.train_losses = []
+        self.train_accuracies = []
+        self.val_losses = []
+        self.val_accuracies = []
+        self.train_f1_scores = []
+        self.val_f1_scores = []
+        
+        # Handle class imbalance with weighted loss
+        if class_weights is not None:
+            weight_tensor = torch.tensor([class_weights[0], class_weights[1]], dtype=torch.float32)
+            self.criterion = nn.CrossEntropyLoss(weight=weight_tensor)
+        else:
+            self.criterion = nn.CrossEntropyLoss()
+            
+        self.optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=5)
 
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.CrossEntropyLoss()  
-
-    for epoch in range(epochs):
-        model.train()
+    def train_epoch(self, train_loader):
+        self.model.train()
         running_loss = 0.0
         y_true, y_pred = [], []
 
         for features, labels in train_loader:
-                optimizer.zero_grad()
-                outputs = model(features)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
+            self.optimizer.zero_grad()
+            outputs = self.model(features)
+            loss = self.criterion(outputs, labels)
+            loss.backward()
+            self.optimizer.step()
 
-                running_loss += loss.item()
+            running_loss += loss.item()
+            y_true.extend(labels.numpy())
+            y_pred.extend(torch.argmax(outputs, dim=1).detach().numpy())
 
-                y_true.extend(labels.numpy())
-                y_pred.extend(torch.argmax(outputs, dim=1).detach().numpy())
+        avg_loss = running_loss / len(train_loader)
+        accuracy = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred, average='weighted')
+        
+        return avg_loss, accuracy, f1
 
-        train_acc = accuracy_score(y_true, y_pred)
-
-        # Validation
-        model.eval()
-        val_true, val_pred = [], []
+    def validate(self, val_loader):
+        self.model.eval()
+        running_loss = 0.0
+        y_true, y_pred = [], []
+        
         with torch.no_grad():
-                for features, labels in val_loader:
-                    outputs = model(features)
-                    val_true.extend(labels.numpy())
-                    val_pred.extend(torch.argmax(outputs, dim=1).numpy())
+            for features, labels in val_loader:
+                outputs = self.model(features)
+                loss = self.criterion(outputs, labels)
+                running_loss += loss.item()
+                
+                y_true.extend(labels.numpy())
+                y_pred.extend(torch.argmax(outputs, dim=1).numpy())
 
-        val_acc = accuracy_score(val_true, val_pred)
+        avg_loss = running_loss / len(val_loader)
+        accuracy = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred, average='weighted')
+        
+        return avg_loss, accuracy, f1
 
-        print(f"Epoch {epoch+1}/{epochs} | Loss: {running_loss/len(train_loader):.4f} "
-                f"| Train Acc: {train_acc:.4f} | Val Acc: {val_acc:.4f}")
+    def train_model(self, train_loader, val_loader, epochs=50, early_stopping_patience=10):
+        best_val_loss = float('inf')
+        patience_counter = 0
+        
+        print("Starting training...")
+        print(f"Epochs: {epochs}, Early stopping patience: {early_stopping_patience}")
+        
+        for epoch in range(epochs):
+            # Training
+            train_loss, train_acc, train_f1 = self.train_epoch(train_loader)
+            
+            # Validation
+            val_loss, val_acc, val_f1 = self.validate(val_loader)
+            
+            # Learning rate scheduling
+            self.scheduler.step(val_loss)
+            
+            # Store metrics
+            self.train_losses.append(train_loss)
+            self.train_accuracies.append(train_acc)
+            self.val_losses.append(val_loss)
+            self.val_accuracies.append(val_acc)
+            self.train_f1_scores.append(train_f1)
+            self.val_f1_scores.append(val_f1)
 
-        return model
+            print(f"Epoch {epoch+1}/{epochs} | "
+                  f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | Train F1: {train_f1:.4f} | "
+                  f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | Val F1: {val_f1:.4f}")
 
+            # Early stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+                # Save best model
+                torch.save(self.model.state_dict(), 'best_traffic_model.pth')
+            else:
+                patience_counter += 1
+                
+            if patience_counter >= early_stopping_patience:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
+        
+        # Load best model
+        self.model.load_state_dict(torch.load('best_traffic_model.pth'))
+        print("Training completed. Best model loaded.")
+        
+        return self.model
