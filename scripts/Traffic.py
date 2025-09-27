@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.metrics import precision_score, recall_score, f1_score
 import numpy as np
 from collections import Counter
+import matplotlib.pyplot as plt
 
 class TrafficDataset(Dataset):
     def __init__(self, df, feature_cols, target_col, seq_len=16):
@@ -341,3 +342,48 @@ class ModelTrainer:
         print("Training completed. Best model loaded.")
         
         return self.model
+    
+
+
+
+
+class ResultsPlotter:
+    def __init__(self, trainer, test_loader=None):
+        self.trainer = trainer
+        self.test_loader = test_loader
+    
+    def plot_training_history(self, figsize=(15, 5)):
+        """Plot training history"""
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
+        
+        # Loss plot
+        axes[0].plot(self.trainer.train_losses, label='Train Loss', color='blue')
+        axes[0].plot(self.trainer.val_losses, label='Val Loss', color='red')
+        axes[0].set_title('Training and Validation Loss')
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Loss')
+        axes[0].legend()
+        axes[0].grid(True)
+        
+        # Accuracy plot
+        axes[1].plot(self.trainer.train_accuracies, label='Train Accuracy', color='blue')
+        axes[1].plot(self.trainer.val_accuracies, label='Val Accuracy', color='red')
+        axes[1].set_title('Training and Validation Accuracy')
+        axes[1].set_xlabel('Epoch')
+        axes[1].set_ylabel('Accuracy')
+        axes[1].legend()
+        axes[1].grid(True)
+        
+        # F1 Score plot
+        axes[2].plot(self.trainer.train_f1_scores, label='Train F1', color='blue')
+        axes[2].plot(self.trainer.val_f1_scores, label='Val F1', color='red')
+        axes[2].set_title('Training and Validation F1 Score')
+        axes[2].set_xlabel('Epoch')
+        axes[2].set_ylabel('F1 Score')
+        axes[2].legend()
+        axes[2].grid(True)
+        
+        plt.tight_layout()
+
+        fig.savefig('../Plots/TrainingHistory.png')
+        plt.show()
