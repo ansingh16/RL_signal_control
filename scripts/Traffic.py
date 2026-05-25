@@ -250,7 +250,7 @@ class ModelTrainer:
         else:
             self.criterion = nn.CrossEntropyLoss()
             
-        self.optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+        self.optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=5)
 
     def train_epoch(self, train_loader):

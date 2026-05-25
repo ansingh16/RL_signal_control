@@ -1,0 +1,9 @@
+torch
+pytris
+pandas
+numpy
+scikit-learn
+plotly
+matplotlib
+tqdm
+python-dotenv
