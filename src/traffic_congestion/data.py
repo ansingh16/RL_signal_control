@@ -184,8 +184,12 @@ class TrafficDataProcessor:
                 train_ds, batch_size=batch_size, shuffle=shuffle_train, num_workers=num_workers
             )
 
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        val_loader = DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        test_loader = DataLoader(
+            test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
 
         info = {
             "n_rows": n_rows,
