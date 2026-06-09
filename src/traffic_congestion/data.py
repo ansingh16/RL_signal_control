@@ -46,6 +46,7 @@ class TrafficDataProcessor:
     def __init__(self, filepath):
         self.filepath = filepath
         self.df = None
+        self.feature_cols = None
         self.train_loader = None
         self.val_loader = None
         self.test_loader = None
@@ -111,6 +112,9 @@ class TrafficDataProcessor:
         df = df.dropna()
 
         self.df = df
+        # Freeze the feature order at build time so the model always receives
+        # columns in this exact order, independent of any later reordering.
+        self.feature_cols = [c for c in df.columns if c != "congestion"]
         print(f"Data processed. Shape: {df.shape}")
         print(f"Congestion distribution: {Counter(df['congestion'])}")
         return df
@@ -135,7 +139,9 @@ class TrafficDataProcessor:
         if self.df is None:
             raise RuntimeError("Call prepare_site_data() before create_loaders_from_df().")
 
-        feature_cols = [c for c in self.df.columns if c != target_col]
+        # Use the frozen feature order from prepare_site_data so train/val/test
+        # (and any later inference) all present columns identically.
+        feature_cols = [c for c in self.feature_cols if c != target_col]
 
         assert abs(sum(splits) - 1.0) < 1e-6, "splits must sum to 1.0"
         n_rows = len(self.df)
