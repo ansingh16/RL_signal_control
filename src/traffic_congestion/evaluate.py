@@ -210,3 +210,30 @@ def plot_baseline_comparison(model_metrics, baselines, path):
     fig.savefig(path, dpi=120)
     plt.close(fig)
     return path
+
+
+def plot_training_history(train_losses, val_losses, val_accuracies, path):
+    """Two-panel training curve: loss (train vs val) and validation accuracy."""
+    plt = _import_plt()
+    epochs = range(1, len(train_losses) + 1)
+    fig, (ax_loss, ax_acc) = plt.subplots(1, 2, figsize=(10, 4))
+
+    ax_loss.plot(epochs, train_losses, marker="o", ms=3, label="Train")
+    ax_loss.plot(epochs, val_losses, marker="s", ms=3, label="Validation")
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Loss")
+    ax_loss.set_title("Training and validation loss")
+    ax_loss.grid(alpha=0.3)
+    ax_loss.legend()
+
+    ax_acc.plot(epochs, val_accuracies, marker="o", ms=3, color="#2ca02c")
+    ax_acc.set_xlabel("Epoch")
+    ax_acc.set_ylabel("Validation accuracy")
+    ax_acc.set_title("Validation accuracy")
+    ax_acc.set_ylim(0, 1.02)
+    ax_acc.grid(alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    return path

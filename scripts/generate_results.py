@@ -32,6 +32,7 @@ from traffic_congestion.evaluate import (
     plot_confusion_matrix,
     plot_per_hour_accuracy,
     plot_pr_curve,
+    plot_training_history,
     predict_loader,
     predict_proba_loader,
 )
@@ -105,6 +106,10 @@ def main():
     by_hour = per_hour_accuracy(y_true, y_pred, hours)
 
     # --- Plots ---
+    plot_training_history(
+        trainer.train_losses, trainer.val_losses, trainer.val_accuracies,
+        f"{RESULTS_DIR}/training_history.png",
+    )
     plot_confusion_matrix(y_true, y_pred, f"{RESULTS_DIR}/confusion_matrix.png")
     ap = plot_pr_curve(y_true, y_prob, f"{RESULTS_DIR}/pr_curve.png")
     plot_per_hour_accuracy(by_hour, f"{RESULTS_DIR}/per_hour_accuracy.png")
