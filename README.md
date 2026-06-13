@@ -9,7 +9,7 @@ recent history and predicts whether the **next** interval will be congested
 (average speed below 30 mph).
 
 Congestion is the minority class — roughly 10% of intervals at a busy site, far
-fewer at a quiet one — so the project is built around honest, imbalance-aware
+fewer at a quiet one — so the project is built around imbalance-aware
 evaluation: the LSTM is benchmarked against majority-class, rush-hour, and
 speed-threshold baselines rather than reported on accuracy alone.
 
