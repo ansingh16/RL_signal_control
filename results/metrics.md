@@ -4,6 +4,8 @@ Site: `data/raw/df_4374.parquet`  |  Test samples: 15,731  |  Features: 22
 
 One-step-ahead congestion forecast (next 15-minute interval), evaluated on a chronologically held-out test set.
 
+Congested share by split: train 5.5% | val 18.8% | **test 25.6%**. The split is chronological and congestion rises over the period, so the figures below are measured against the test prevalence rather than the site-wide average.
+
 | Model | Accuracy | Precision | Recall | F1 |
 |---|---|---|---|---|
 | **LSTM (forecast)** | 0.846 | 0.628 | 0.977 | 0.765 |

@@ -116,11 +116,29 @@ def main():
     plot_baseline_comparison(model_metrics, baselines, f"{RESULTS_DIR}/baseline_comparison.png")
 
     # --- Metrics table ---
-    write_metrics_md(args.site, model_metrics, ap, baselines, info)
+    prevalence = split_prevalence(proc.df, info, seq_len)
+    write_metrics_md(args.site, model_metrics, ap, baselines, info, prevalence)
     print("\nWrote results to", RESULTS_DIR)
 
 
-def write_metrics_md(site, model_metrics, ap, baselines, info):
+def split_prevalence(df, info, seq_len):
+    """Congested share of each split, on the label rows the model is scored against.
+
+    The split is chronological and congestion is not stationary at this site, so
+    train and test see materially different class balances. Reporting the test
+    prevalence next to the metrics stops the site-wide average being mistaken for
+    the rate these numbers were measured against.
+    """
+    rates = {}
+    for name in ("train", "val", "test"):
+        lo, hi = info[f"{name}_rows_range"]
+        labels = df["congestion"].iloc[lo + seq_len : hi + 1]
+        if len(labels):
+            rates[name] = float(labels.mean())
+    return rates
+
+
+def write_metrics_md(site, model_metrics, ap, baselines, info, prevalence):
     rows = [("LSTM", model_metrics)] + list(baselines.items())
     lines = [
         "# Evaluation report",
@@ -130,6 +148,15 @@ def write_metrics_md(site, model_metrics, ap, baselines, info):
         "",
         "One-step-ahead congestion forecast (next 15-minute interval), evaluated on a "
         "chronologically held-out test set.",
+        "",
+        "Congested share by split: "
+        + " | ".join(
+            f"{'**' if k == 'test' else ''}{k} {v:.1%}{'**' if k == 'test' else ''}"
+            for k, v in prevalence.items()
+        )
+        + ". The split is chronological and congestion rises over the period, so the "
+        "figures below are measured against the test prevalence rather than the "
+        "site-wide average.",
         "",
         "| Model | Accuracy | Precision | Recall | F1 |",
         "|---|---|---|---|---|",

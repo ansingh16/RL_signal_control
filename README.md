@@ -1,6 +1,6 @@
 # M25 Congestion Prediction with LSTM on TfL Sensor Data
 
-[![CI](https://github.com/ansingh16/RL_signal_control/actions/workflows/ci.yml/badge.svg)](https://github.com/ansingh16/RL_signal_control/actions/workflows/ci.yml)
+[![CI](https://github.com/ansingh16/tfl-congestion-lstm/actions/workflows/ci.yml/badge.svg)](https://github.com/ansingh16/tfl-congestion-lstm/actions/workflows/ci.yml)
 
 A PyTorch LSTM that forecasts traffic congestion on the M25 motorway from real
 Transport for London (TfL) sensor data. Each motorway checkpoint reports traffic
@@ -15,9 +15,25 @@ speed-threshold baselines rather than reported on accuracy alone.
 
 ## Results
 
-Trained on a single busy checkpoint (`data/raw/df_4374.parquet`, ~10% congestion)
-with a chronological 70/15/15 split. Metrics are on the held-out test set of
-**15,731** windows (22 features each). Full report: [`results/metrics.md`](results/metrics.md).
+Trained on a single busy checkpoint (`data/raw/df_4374.parquet`) with a
+chronological 70/15/15 split. Metrics are on the held-out test set of **15,731**
+windows (22 features each). Full report: [`results/metrics.md`](results/metrics.md).
+
+**Check the class balance before reading the table.** Congestion is ~10% of
+intervals at this site overall, but it is not spread evenly through time and the
+split is chronological, so each split sees a different balance:
+
+| Split | Congested share |
+|---|---|
+| Train (first 70%) | 5.5% |
+| Validation (next 15%) | 18.8% |
+| **Test (last 15%)** | **25.6%** |
+
+The model therefore trains on one class balance and is evaluated on another
+roughly 4.7x more congested. Every figure below is against a **25.6%** positive
+rate, which is what the majority-class baseline's 0.744 accuracy and the 0.256
+no-skill PR-AUC are both restating. The site-wide ~10% is the right number for
+describing the road, and the wrong one for reading these results.
 
 | Model | Accuracy | Precision | Recall | F1 |
 |---|---|---|---|---|
